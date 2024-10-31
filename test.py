@@ -1,4 +1,6 @@
 import os
+import pandas as pd
+import re
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -25,10 +27,10 @@ try:
     username_field = WebDriverWait(driver, 100).until(
         EC.presence_of_element_located((By.ID, "username"))
     )
-    username_field.send_keys("user_redacted") 
+    username_field.send_keys("USERNAME_REDACTED") 
 
     password_field = driver.find_element(By.ID, "password")
-    password_field.send_keys("pwd_redacted") 
+    password_field.send_keys("PASSCODE_REDACTED") 
     password_field.send_keys(Keys.RETURN)
 
     # Wait for either the 2FA button or the successful redirection
@@ -56,6 +58,9 @@ try:
         EC.presence_of_element_located((By.CSS_SELECTOR, "table.table-hover"))
     )
 
+    # Dictionary to store session data
+    session_data = []
+
     # Find all rows in the table
     rows = table.find_elements(By.TAG_NAME, "tr")
 
@@ -70,12 +75,42 @@ try:
             second_td = tds[1]
             span = second_td.find_element(By.TAG_NAME, "span")
             if "add session" in span.text.lower() and "add session label" not in span.text.lower():
-                # If it does, print the content of the last td, date only
-                index1 = tds[2].text.find(" added")
-                index2 = tds[2].text.find("ICCS")
-                index3 = tds[2].text.find(" in CBTF")
+                log_text = tds[2].text
                 
-                print(tds[2].text[:index1].strip() + " " + tds[2].text[index2:index3].strip())
+                # Extract date using regex
+                date_pattern = r'^(.+?) \([A-Z]{3}\) added'
+                date_match = re.match(date_pattern, log_text)
+                if date_match:
+                    date_added = date_match.group(1).strip()
+                else:
+                    date_added = None  # Handle as needed
+
+                # Extract location using regex
+                location_pattern = r'in (.+?) in CBTF'
+                location_match = re.search(location_pattern, log_text)
+                if location_match:
+                    location = location_match.group(1).strip()
+                else:
+                    location = "Unknown"
+                
+                # Add date and location to the dictionary
+                session_data.append({
+                    "Date Added": date_added,
+                    "Location" : location
+                    }
+                )
+    
+    # Convert the dictionary to pandas dataframe
+    df = pd.DataFrame(session_data)
+
+    # Convert Date Added to pandas' datetime
+    df['Date Added'] = pd.to_datetime(df['Date Added'], format="%Y-%m-%d %H:%M:%S", errors='coerce')
+    
+    # Sort Date Added
+    df.sort_values('Date Added', inplace = True)
+
+    # Print the dataframe for testing
+    print(df)
 
 except Exception as e:
     print("An error occurred:", e)
