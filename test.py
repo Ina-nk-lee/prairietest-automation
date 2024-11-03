@@ -1,6 +1,5 @@
 import os
 import pandas as pd
-import re
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -63,69 +62,33 @@ try:
         EC.presence_of_element_located((By.CSS_SELECTOR, "table.table-hover"))
     )
 
-    # Array to store logs
-    session_data = []
+    # Use pandas to read the HTML table
+    df = pd.read_html(table.get_attribute('outerHTML'))[0]
 
-    # Parse rows in log html table
-    rows = table.find_elements(By.TAG_NAME, "tr")
-
-    # Keep track of parsing progress
-    totalRows = len(rows)
-    idx = 0
-
-    # Iterate through each row
-    for row in rows:
-        # Find all td elements in this row
-        tds = row.find_elements(By.TAG_NAME, "td")
-
-        # Check if this row has at least 3 td elements
-        if len(tds) >= 3:
-            # Check if the second td contains "add session"
-            second_td = tds[1]
-            span = second_td.find_element(By.TAG_NAME, "span")
-            if "add session" in span.text.lower() and "add session label" not in span.text.lower():
-                log_text = tds[2].text
-                
-                # Extract date using regex
-                date_pattern = r'^(.+?) \([A-Z]{3}\) added'
-                date_match = re.match(date_pattern, log_text)
-                if date_match:
-                    date_added = date_match.group(1).strip()
-                else:
-                    location = "Unknown date"
-
-                # Extract location using regex
-                location_pattern = r'in (.+?) in CBTF'
-                location_match = re.search(location_pattern, log_text)
-                if location_match:
-                    location = location_match.group(1).strip()
-                else:
-                    location = "Unknown location"
-                
-                # Add date and location to the dictionary
-                session_data.append({
-                    "Date Added": date_added,
-                    "Location" : location
-                    }
-                )
-            idx += 1
-
-        # Percentage progress indicator
-        if idx % 10 == 0:
-            progress = str(100*idx/totalRows)
-            print(" " + progress[0:progress.index(".") + 2] + "% parsed", end='\r')
+    # Filter rows containing "add session" (these contain the scheduled dates and locations)
+    df = df[df.iloc[:, 1].str.contains("add session", case=False, na=False) & 
+            ~df.iloc[:, 1].str.contains("add session label", case=False, na=False)]
     
-    # Convert the dictionary to pandas dataframe
-    df = pd.DataFrame(session_data)
+    # ("add session label" is something else we want to ignore)
 
-    # Convert Date Added to pandas' datetime
-    df['Date Added'] = pd.to_datetime(df['Date Added'], format="%Y-%m-%d %H:%M:%S", errors='coerce')
+    # Extract date and location using regex
+    df['Scheduled Date'] = df.iloc[:, 2].str.extract(r'^(.+?) \([A-Z]{3}\) added')
+    df['Location'] = df.iloc[:, 2].str.extract(r'in (.+?) in CBTF')
+
+    # Convert Scheduled Date to pandas datetime
+    df['Scheduled Date'] = pd.to_datetime(df['Scheduled Date'], format="%Y-%m-%d %H:%M:%S", errors='coerce')
     
-    # Sort Date Added
-    df.sort_values('Date Added', inplace = True)
+    # Sort dates
+    df.sort_values('Scheduled Date', inplace=True)
 
-    # Print the dataframe for testing
+    # Keep only the relevant columns
+    df = df[['Scheduled Date', 'Location']]
+
+    # Print dataframe for testing
     print(df)
+
+    # Save dataframe to .csv
+    df.to_csv('schedule.csv')
 
 except Exception as e:
     print("An error occurred:", e)
