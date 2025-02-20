@@ -117,38 +117,47 @@ def visualize_test_session_heatmap(start_date, end_date):
     file_path = os.path.join(os.getcwd(), 'schedule.csv')
     df = pd.read_csv(file_path, parse_dates=['Scheduled Date'])
 
-    # Convert Date, Hour
-    df['Date'] = df['Scheduled Date'].dt.date
-    df['Hour'] = df['Scheduled Date'].dt.hour
+    # Assume each session lasts 1 hour (adjust if you have EndTime)
+    df['StartTime'] = df['Scheduled Date']
+    df['EndTime'] = df['Scheduled Date'] + pd.Timedelta(hours=1)  # 1-hour duration assumption
 
-    # Group by Date, Hour, and Location, then count occurrences
-    heatmap_data = df.groupby(['Date', 'Hour', 'Location']).size().reset_index(name='Count')
-    heatmap_data['Date'] = pd.to_datetime(heatmap_data['Date'])
+    # 🕐 Expand rows per hour
+    expanded_rows = []
+    for _, row in df.iterrows():
+        current_time = row['StartTime']
+        while current_time < row['EndTime']:
+            expanded_rows.append({
+                'Date': current_time.date(),
+                'Hour': current_time.hour,
+                'Location': row['Location']
+            })
+            current_time += timedelta(hours=1)  # Move to the next hour
 
-    # Debug: Check grouped data
-    print("Grouped Data (heatmap_data):")
-    print(heatmap_data.head(10))
+    # Create expanded DataFrame
+    expanded_df = pd.DataFrame(expanded_rows)
+    expanded_df['Date'] = pd.to_datetime(expanded_df['Date']) 
+
+    # Group by Date, Hour, and Location
+    heatmap_data = expanded_df.groupby(['Date', 'Hour', 'Location']).size().reset_index(name='Count')
 
     # Create full range of dates and hours
     full_hours = pd.DataFrame({'Hour': list(range(24))})
     full_dates = pd.DataFrame({'Date': pd.date_range(start=start_date, end=end_date)})
-    full_locations = pd.DataFrame({'Location': heatmap_data['Location']})  # Add locations
-
-    # Cross join full range of dates, hours, and locations
+    full_locations = pd.DataFrame({'Location': heatmap_data['Location'].unique()})
     full_grid = full_dates.merge(full_hours, how='cross').merge(full_locations, how='cross')
 
     # Merge full grid with expanded data
     heatmap_data = full_grid.merge(heatmap_data, on=['Date', 'Hour', 'Location'], how='left').fillna(0)
     heatmap_data['Count'] = heatmap_data['Count'].astype(int)
 
-    # Create heatmap
+    # 🎨 Create heatmap
     heatmap = alt.Chart(heatmap_data).mark_rect().encode(
         x=alt.X('Hour:O', title='Hour of Day'),
         y=alt.Y('Date:T', title='Date', timeUnit='yearmonthdate'),
         color=alt.Color('Count:Q', scale=alt.Scale(scheme='reds'), title='Session Counts'),
         tooltip=['Date:T', 'Hour:O', 'Location:N', 'Count:Q']
     ).properties(
-        title='Test Session Heatmap',
+        title='Test Session Heatmap (Hourly Expanded)',
         width=800,
         height=400
     ).facet(
